@@ -32,6 +32,9 @@ export component AppWindow inherits Window {
     min-width: 600px;
     min-height: 500px;
 
+    out property <length> init-width: root.preferred-width;
+    out property <length> init-height: root.preferred-height;
+
     // 状态数据管理
     in-out property <string> input-text: "";
     in-out property <float> slider-val: 50.0;

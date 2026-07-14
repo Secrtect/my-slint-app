@@ -49,8 +49,9 @@ edition = "2024"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
 slint = { version = "1.17.1", default-features = false, features = [
-  "backend-winit", # 窗口管理# 开启纯 CPU 软件渲染后端
-  "compat-1-2",    # 保持向前兼容性
+  "backend-winit",      # 窗口管理# 开启纯 CPU 软件渲染后端
+  "compat-1-2",         # 保持向前兼容性
+  "unstable-winit-030",
 ] }
 slint_borderless_windows = { git = "https://github.com/Drew-Chase/slint_borderless_windows.git" }
 [target.'cfg(windows)'.dependencies]
@@ -59,6 +60,7 @@ windows-sys = { version = "0.52", features = [
   "Win32_Graphics_Gdi",
 ] }
 raw-window-handle = "0.6"
+winit = "0.30"
 
 
 [build-dependencies]

@@ -64,6 +64,11 @@ unsafe extern "system" {
         cy: i32,
         u_flags: u32,
     ) -> i32;
+
+    // === 原生 Windows 透明度控制 API ===
+    fn GetWindowLongW(h_wnd: isize, n_index: i32) -> i32;
+    fn SetWindowLongW(h_wnd: isize, n_index: i32, dw_new_long: i32) -> i32;
+    fn SetLayeredWindowAttributes(h_wnd: isize, cr_key: u32, b_alpha: u8, dw_flags: u32) -> i32;
 }
 
 #[cfg(target_os = "windows")]
@@ -78,7 +83,7 @@ unsafe extern "system" {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    // 1. 设置 Hook，使窗口初创时保持隐藏
+    // 1. 设置 Hook，使窗口初创时保持 100% 隐藏
     slint::BackendSelector::new()
         .backend_name("winit".into())
         .renderer_name("software".into())
@@ -91,15 +96,16 @@ fn main() -> Result<(), Box<dyn Error>> {
     // 3. 隐身状态下绑定无边框组件
     let frame = app.as_weak().setup_borderless().expect("无边框初始化失败");
 
-    // 4. 核心：原子化居中并显示
+    // 4. 核心：原子化居中、透明首帧渲染与平滑呈现
     let app_weak = app.as_weak();
     slint::invoke_from_event_loop(move || {
         if let Some(app) = app_weak.upgrade() {
-            app.window()
-                .with_winit_window(|winit_window: &winit::window::Window| {
-                    let logical_w = app.get_init_width();
-                    let logical_h = app.get_init_height();
+            let logical_w = app.get_init_width();
+            let logical_h = app.get_init_height();
+            let app_weak_next_tick = app_weak.clone();
 
+            app.window()
+                .with_winit_window(move |winit_window: &winit::window::Window| {
                     #[cfg(target_os = "windows")]
                     {
                         if let Ok(handle) = winit_window.window_handle() {
@@ -107,7 +113,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                                 let hwnd = win32_handle.hwnd.get() as isize;
 
                                 unsafe {
-                                    // A. 探测当前鼠标所在的显示器（符合用户在哪个屏幕点击，就在哪个屏幕居中的人机工效学）
+                                    // A. 探测当前鼠标所在的显示器
                                     let mut cursor_pos = POINT::default();
                                     GetCursorPos(&mut cursor_pos);
                                     let h_monitor = MonitorFromPoint(cursor_pos, 2); // 2 = MONITOR_DEFAULTTONEAREST
@@ -122,7 +128,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                                     let physical_w = (logical_w * scale_factor) as i32;
                                     let physical_h = (logical_h * scale_factor) as i32;
 
-                                    // D. 获取目标显示器的工作区（已经由系统自动扣除了任务栏）
+                                    // D. 获取目标显示器的工作区（避开任务栏）
                                     let mut monitor_info = MONITORINFO::default();
                                     GetMonitorInfoW(h_monitor, &mut monitor_info);
                                     let work_area = monitor_info.rc_work;
@@ -133,8 +139,12 @@ fn main() -> Result<(), Box<dyn Error>> {
                                     let x = work_area.left + (work_w - physical_w) / 2;
                                     let y = work_area.top + (work_h - physical_h) / 2;
 
-                                    // F. 原子化操作：通过 Win32 API 同步、一次性地调整大小和位置
-                                    // 0x0010 = SWP_NOACTIVATE, 0x0004 = SWP_NOZORDER
+                                    // F. 【原生不透明度黑科技】：将窗口标记为分层窗口（WS_EX_LAYERED），并将透明度直接压到 0
+                                    let ex_style = GetWindowLongW(hwnd, -20); // -20 代表 GWL_EXSTYLE
+                                    SetWindowLongW(hwnd, -20, ex_style | 0x00080000); // 0x00080000 代表 WS_EX_LAYERED
+                                    SetLayeredWindowAttributes(hwnd, 0, 0, 0x00000002); // Alpha 设为 0（100% 透明），0x00000002 代表 LWA_ALPHA
+
+                                    // G. 原子化设置窗口坐标与物理尺寸（此时窗口仍是隐藏的）
                                     SetWindowPos(
                                         hwnd,
                                         0,
@@ -142,7 +152,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                                         y,
                                         physical_w,
                                         physical_h,
-                                        0x0010 | 0x0004,
+                                        0x0010 | 0x0004, // SWP_NOACTIVATE | SWP_NOZORDER
                                     );
                                 }
                             }
@@ -151,7 +161,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
                     #[cfg(not(target_os = "windows"))]
                     {
-                        // 非 Windows 平台的退化处理（保持原 winit 逻辑）
+                        // 非 Windows 平台的退化处理
                         let scale_factor = winit_window.scale_factor();
                         let physical_w = (logical_w * scale_factor as f32) as u32;
                         let physical_h = (logical_h * scale_factor as f32) as u32;
@@ -171,8 +181,32 @@ fn main() -> Result<(), Box<dyn Error>> {
                         }
                     }
 
-                    // G. 此时尺寸、位置、DPI 都已经和目标显示器完美吻合，一键显现，绝无闪烁！
+                    // H. 窗口物理就位，一键显现！
                     winit_window.set_visible(true);
+
+                    // I. 在下一个事件循环中恢复不透明度，彻底规避软件渲染的首帧白/黑屏现象
+                    let _ = slint::invoke_from_event_loop(move || {
+                        if let Some(app_show) = app_weak_next_tick.upgrade() {
+                            app_show.window().with_winit_window(|win| {
+                                #[cfg(target_os = "windows")]
+                                {
+                                    if let Ok(handle) = win.window_handle() {
+                                        if let RawWindowHandle::Win32(win32_handle) =
+                                            handle.as_raw()
+                                        {
+                                            let hwnd = win32_handle.hwnd.get() as isize;
+                                            unsafe {
+                                                // 恢复不透明度 (Alpha = 255)
+                                                SetLayeredWindowAttributes(
+                                                    hwnd, 0, 255, 0x00000002,
+                                                );
+                                            }
+                                        }
+                                    }
+                                }
+                            });
+                        }
+                    });
                 });
         }
     })?;

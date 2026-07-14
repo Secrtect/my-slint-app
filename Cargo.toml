@@ -49,8 +49,9 @@ edition = "2024"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
 slint = { version = "1.17.1", default-features = false, features = [
-  "backend-winit", # 窗口管理# 开启纯 CPU 软件渲染后端
-  "compat-1-2",    # 保持向前兼容性
+  "backend-winit",      # 窗口管理#
+  "compat-1-2",         # 保持向前兼容性
+  "unstable-winit-030",
 ] }
 slint_borderless_windows = { git = "https://github.com/Drew-Chase/slint_borderless_windows.git" }
 [target.'cfg(windows)'.dependencies]
@@ -68,3 +69,15 @@ slint-build = "1.17.1"
 opt-level = 3      # 开启最高性能优化，保证 UI 渲染和事件循环的绝对流畅
 lto = "thin"       # 使用 ThinLTO，兼顾了“跨 Crate 优化”与“较快的编译速度”
 codegen-units = 16 # 保持默认或适当降低，兼顾多核编译速度与优化质量
+
+[profile.dev]
+opt-level = 0
+debug = 1                    # 将调试信息从 2（完整）降到 1（仅限行表），显著减少生成的 debug 信息量和链接时间
+panic = "unwind"
+split-debuginfo = "unpacked" # 拆分调试信息（在 macOS 和 Windows 上效果极佳），避免链接器花大量时间打包调试符号
+
+# 核心加速技巧：对所有第三方依赖开启优化
+# 像 slint、winit、windows-sys 等依赖库代码量庞大，用 opt-level = 0 编译运行会非常卡顿。
+# 将它们设为 2，不仅能让 UI 运行流畅，而且因为依赖库只需编译一次，不会影响你日常修改代码的增量编译速度。
+[profile.dev.package."*"]
+opt-level = 2

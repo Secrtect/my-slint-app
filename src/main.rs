@@ -9,14 +9,46 @@ use slint_borderless_windows::TitlebarSetup;
 slint::include_modules!();
 
 fn main() -> Result<(), Box<dyn Error>> {
-    unsafe {
-        std::env::set_var("SLINT_BACKEND", "winit-software");
-    }
+    // unsafe {
+    //     std::env::set_var("SLINT_BACKEND", "winit-software");
+    // }
+
     // 2. 创建窗口实例
     let app = AppWindow::new()?;
 
     // 3. 核心：启动无边框底层机制并接管 winit 句柄
+    // 必须要先执行这行，让无边框库完成 Win32 样式（去边框、加阴影）的修改
     let frame = app.as_weak().setup_borderless().expect("无边框初始化失败");
+
+    // ==================== 完美的无闪烁居中逻辑（动态属性版） ====================
+    // 1. 从 Slint 获取当前的屏幕缩放因子 (DPI Scale)，确保高分屏下计算不偏差
+    let scale_factor = app.window().scale_factor();
+
+    // 2. 动态从 .slint 获取导出的逻辑宽高属性（对应 init-width 和 init-height）
+    let init_width_logical = app.get_init_width();
+    let init_height_logical = app.get_init_height();
+
+    // 3. 结合 DPI 缩放换算出对应的真实物理像素尺寸
+    let win_p_width = (init_width_logical * scale_factor) as i32;
+    let win_p_height = (init_height_logical * scale_factor) as i32;
+
+    // 4. 使用 windows-sys 直接获取主显示器的物理分辨率并计算居中坐标
+    let (target_x, target_y) = unsafe {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{
+            GetSystemMetrics, SM_CXSCREEN, SM_CYSCREEN,
+        };
+        let screen_width = GetSystemMetrics(SM_CXSCREEN);
+        let screen_height = GetSystemMetrics(SM_CYSCREEN);
+
+        let x = (screen_width - win_p_width) / 2;
+        let y = (screen_height - win_p_height) / 2;
+        (x, y)
+    };
+
+    // 5. 将计算好的物理坐标设置给窗口
+    app.window()
+        .set_position(slint::PhysicalPosition::new(target_x, target_y));
+    // ===========================================================================
 
     // 4. 克隆 frame 实例，分别绑定给标题栏控制器的各个回调
     let frame_maximize = frame.clone();
@@ -34,7 +66,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     });
 
     app.global::<WindowControls>().on_drag(move || {
-        frame_drag.drag();
+        let _ = frame_drag.drag();
     });
 
     app.global::<WindowControls>().on_double_click(move || {
@@ -45,7 +77,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         frame_minimize.minimize();
     });
 
-    // 5. 阻塞并运行
+    // 5. 阻塞并运行（此时窗口直接在中央完美呈现，无任何坐标跳跃闪烁）
     app.run()?;
 
     Ok(())

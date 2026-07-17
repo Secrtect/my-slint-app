@@ -57,7 +57,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         slint::invoke_from_event_loop(move || {
             if let Some(app) = app_weak.upgrade() {
                 let handle = app.window().window_handle();
-                let res = window_vibrancy::apply_mica(&handle, Some(true));
+                let res = window_vibrancy::apply_mica(&handle, None);
                 println!("apply_mica result (event loop): {:?}", res);
             }
         })

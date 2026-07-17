@@ -50,6 +50,21 @@ fn main() -> Result<(), Box<dyn Error>> {
         .set_position(slint::PhysicalPosition::new(target_x, target_y));
     // ===========================================================================
 
+    // ==================== 新增：应用 Windows 11 Mica 效果 ====================
+    #[cfg(target_os = "windows")]
+    {
+        let app_weak = app.as_weak();
+        slint::invoke_from_event_loop(move || {
+            if let Some(app) = app_weak.upgrade() {
+                let handle = app.window().window_handle();
+                let res = window_vibrancy::apply_mica(&handle, Some(true));
+                println!("apply_mica result (event loop): {:?}", res);
+            }
+        })
+        .expect("Failed to queue event loop initialization");
+    }
+    // ===========================================================================
+
     // 4. 克隆 frame 实例，分别绑定给标题栏控制器的各个回调
     let frame_maximize = frame.clone();
     let frame_close = frame.clone();

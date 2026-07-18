@@ -9,9 +9,9 @@ use slint_borderless_windows::TitlebarSetup;
 slint::include_modules!();
 
 fn main() -> Result<(), Box<dyn Error>> {
-    // unsafe {
-    //     std::env::set_var("SLINT_BACKEND", "winit-software");
-    // }
+    unsafe {
+        std::env::set_var("SLINT_BACKEND", "winit-software");
+    }
     // ========== 强制 wgpu 使用 Vulkan 后端 ==========
     // unsafe {
     //     std::env::set_var("WGPU_BACKEND", "vulkan");

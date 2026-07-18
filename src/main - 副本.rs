@@ -12,11 +12,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     // unsafe {
     //     std::env::set_var("SLINT_BACKEND", "winit-software");
     // }
-    // ========== 强制 wgpu 使用 Vulkan 后端 ==========
-    // unsafe {
-    //     std::env::set_var("WGPU_BACKEND", "vulkan");
-    // }
-    // // ==============================================
 
     // 2. 创建窗口实例
     let app = AppWindow::new()?;

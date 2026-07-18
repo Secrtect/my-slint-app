@@ -17,6 +17,8 @@ import {
     GroupBox,
 } from "std-widgets.slint";
 
+// 新增：引入系统调色板单例
+import { Palette } from "std-widgets.slint";
 // 1. 导入我们写的无边框组件
 import { Titlebar, WindowControls } from "./titlebar.slint";
 
@@ -31,8 +33,11 @@ export component AppWindow inherits Window {
     preferred-width: init-width;
     preferred-height: init-height;
     // ============================================================
-    // 1. .slint 中保持背景透明
-        background: transparent;
+    // 依然保留这个让 Rust 控制的变量
+    in-out property <bool> is-mica-active: false;
+
+    // 修改：如果 Mica 成功开启则透明；如果失败，则使用系统自带的深浅色背景色 (Palette.background)
+    background: self.is-mica-active ? transparent : Palette.background;
 
     title: "Slint 标准组件全家桶";
 

@@ -4,6 +4,8 @@
 use std::error::Error;
 // 1. 引入无边框初始化特征
 use slint_borderless_windows::TitlebarSetup;
+use windows_sys::Win32::UI::HiDpi::GetDpiForSystem;
+use windows_sys::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_CXSCREEN, SM_CYSCREEN};
 
 // 引入自动生成的 UI 模块
 slint::include_modules!();
@@ -25,34 +27,35 @@ fn main() -> Result<(), Box<dyn Error>> {
     // 必须要先执行这行，让无边框库完成 Win32 样式（去边框、加阴影）的修改
     let frame = app.as_weak().setup_borderless().expect("无边框初始化失败");
 
-    // ==================== 完美的无闪烁居中逻辑（动态属性版） ====================
-    // 1. 从 Slint 获取当前的屏幕缩放因子 (DPI Scale)，确保高分屏下计算不偏差
-    let scale_factor = app.window().scale_factor();
+    // ==================== 修复后的无闪烁居中逻辑（逻辑坐标版） ====================
+    // 1. 使用 windows-sys 获取系统真实 DPI 并换算出缩放比例，绕过 Slint 初始化的 1.0 陷阱
+    // (注意：需要确保依赖中开启了 windows-sys 的 "Win32_UI_HiDpi" 和 "Win32_UI_WindowsAndMessaging" 特性)
+    let (screen_width_phys, screen_height_phys, real_scale) = unsafe {
+        let dpi = GetDpiForSystem();
+        let scale = dpi as f32 / 96.0;
 
-    // 2. 动态从 .slint 获取导出的逻辑宽高属性（对应 init-width 和 init-height）
+        let w = GetSystemMetrics(SM_CXSCREEN);
+        let h = GetSystemMetrics(SM_CYSCREEN);
+        (w, h, scale)
+    };
+
+    // 2. 动态从 .slint 获取导出的逻辑宽高属性
     let init_width_logical = app.get_init_width();
     let init_height_logical = app.get_init_height();
 
-    // 3. 结合 DPI 缩放换算出对应的真实物理像素尺寸
-    let win_p_width = (init_width_logical * scale_factor) as i32;
-    let win_p_height = (init_height_logical * scale_factor) as i32;
+    // 3. 将 Windows API 获取的物理屏幕尺寸转换为逻辑尺寸
+    let screen_w_logical = screen_width_phys as f32 / real_scale;
+    let screen_h_logical = screen_height_phys as f32 / real_scale;
 
-    // 4. 使用 windows-sys 直接获取主显示器的物理分辨率并计算居中坐标
-    let (target_x, target_y) = unsafe {
-        use windows_sys::Win32::UI::WindowsAndMessaging::{
-            GetSystemMetrics, SM_CXSCREEN, SM_CYSCREEN,
-        };
-        let screen_width = GetSystemMetrics(SM_CXSCREEN);
-        let screen_height = GetSystemMetrics(SM_CYSCREEN);
+    // 4. 在逻辑坐标系下计算居中坐标
+    let target_x_logical = (screen_w_logical - init_width_logical) / 2.0;
+    let target_y_logical = (screen_h_logical - init_height_logical) / 2.0;
 
-        let x = (screen_width - win_p_width) / 2;
-        let y = (screen_height - win_p_height) / 2;
-        (x, y)
-    };
-
-    // 5. 将计算好的物理坐标设置给窗口
-    app.window()
-        .set_position(slint::PhysicalPosition::new(target_x, target_y));
+    // 5. 使用 LogicalPosition 传递给 Slint，底层会自动根据最终的 DPI 换算物理坐标，完美对齐
+    app.window().set_position(slint::LogicalPosition::new(
+        target_x_logical,
+        target_y_logical,
+    ));
     // ===========================================================================
 
     // ==================== 新增：应用 Windows 11 Mica 效果 ====================

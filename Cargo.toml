@@ -4,32 +4,47 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-# 移除了 compat-1-2 和 unstable-winit-030，仅保留 UI 运行必需的 winit 后端
-slint = { version = "1.17.1", features = [
+slint = { version = "1.17.1", default-features = false, features = [
   "backend-winit",
+  "compat-1-2",
   "raw-window-handle-06",
+  "renderer-software",
 ] }
-slint_borderless_windows = { git = "https://github.com/Drew-Chase/slint_borderless_windows.git" }
+
+# 👇 1. 为本地的 src/borderless.rs 补充这三个依赖
+# 务必加上 default-features = false，防止它们把 OpenGL 特性加回来
+i-slint-backend-winit = { version = "1.17.1", default-features = false }
+winit = { version = "0.30", default-features = false }
+tracing = "0.1"
 
 [target.'cfg(windows)'.dependencies]
-# 移除了未使用的 Win32_Graphics_Gdi，只保留获取屏幕分辨率所需的 Windows 消息及窗口机制
 window-vibrancy = "0.5"
-windows-sys = { version = "0.52", features = ["Win32_UI_WindowsAndMessaging"] }
+
+# main.rs 中 GetDpiForSystem 需要 Win32_UI_HiDpi 特性
+windows-sys = { version = "0.52", features = [
+  "Win32_UI_WindowsAndMessaging",
+  "Win32_UI_HiDpi",
+  "Win32_Foundation",
+] }
+
+# 👇 2. 为 src/borderless.rs 补充 windows crate（注意：它与上面的 windows-sys 是两个独立的库）
+windows = { version = "0.58", features = [
+  "Win32_Foundation",
+  "Win32_Graphics_Dwm",
+  "Win32_UI_Controls",
+  "Win32_UI_Shell",
+  "Win32_UI_WindowsAndMessaging",
+] }
 
 [build-dependencies]
 slint-build = "1.17.1"
 
-# [profile.release]
-# opt-level = 3
-# lto = "thin"
-# codegen-units = 16
-
 [profile.release]
-opt-level = "z"   # 极致大小优化（"z" 比 "s" 更激进，会额外关闭一些影响体积的内联和循环展开）
-lto = true        # 开启全局胖 LTO (Link-Time Optimization)，消除跨 crate 的死代码
-codegen-units = 1 # 限制为单个代码生成单元，允许 LLVM 实施最彻底的全局优化
-panic = "abort"   # 移除 panic 展开栈（Unwinding）元数据，大幅减小体积
-strip = true      # 自动剥离（Strip）所有调试符号和符号表（等同于运行 strip 命令）
+opt-level = "z"   # 极致大小优化
+lto = true        # 全局 LTO
+codegen-units = 1 # 限制单元
+panic = "abort"   # 移除栈展开元数据
+strip = true      # 剥离符号
 
 [profile.dev]
 opt-level = 0
@@ -37,7 +52,5 @@ debug = 1
 panic = "unwind"
 split-debuginfo = "unpacked"
 
-# 这一段建议继续保留。对第三方依赖开启 opt-level = 2 能确保 
-# Slint 及其底层渲染器在 Debug 模式下也不至于卡顿，同时不影响你手写代码的增量编译速度。
 [profile.dev.package."*"]
 opt-level = 2
